@@ -220,7 +220,7 @@ namespace Logazmic.ViewModels
                 AddReceiver(new FileReceiver
                             {
                                 FileToWatch = path,
-                                FileFormat = FileReceiver.FileFormatEnums.Log4jXml,
+                                FileFormat = FileReceiver.FileFormatEnums.Flat,
                             });
             }
             catch (Exception e)
@@ -232,7 +232,7 @@ namespace Logazmic.ViewModels
         public void Open()
         {
             string path;
-            var res = DialogService.Current.ShowOpenDialog(out path, ".log4j", "Nlog log4jxml|*.log4jxml;*.log4j");
+            var res = DialogService.Current.ShowOpenDialog(out path, ".log", "log4net|*.log");
             if (!res)
             {
                 return;

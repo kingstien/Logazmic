@@ -2,9 +2,10 @@
 {
     using System;
     using System.Collections.Generic;
+    using System.Globalization;
     using System.IO;
     using System.Text;
-
+    using System.Text.RegularExpressions;
     using Log;
 
     /// <summary>
@@ -56,7 +57,7 @@
                 throw new ApplicationException(string.Format("File \"{0}\" does not exist.", FileToWatch));
             }
 
-            fileReader = new StreamReader(new FileStream(FileToWatch, FileMode.Open, FileAccess.Read, FileShare.ReadWrite));
+            fileReader = new StreamReader(new FileStream(FileToWatch, FileMode.Open, FileAccess.Read, FileShare.ReadWrite), Encoding.GetEncoding("GB2312"));
 
             lastFileLength = 0;
 
@@ -101,6 +102,18 @@
 
             ReadFile();
         }
+        private DateTime GetDateTime(string dateTime)
+        {
+            string[] strArr = dateTime.Split(new char[] { '-', ' ', ':', ',' });
+            DateTime dt = new DateTime(int.Parse(strArr[0]),
+                int.Parse(strArr[1]),
+                int.Parse(strArr[2]),
+                int.Parse(strArr[3]),
+                int.Parse(strArr[4]),
+                int.Parse(strArr[5]),
+                int.Parse(strArr[6]));
+            return dt;
+        }
 
         private void ReadFile()
         {
@@ -116,20 +129,36 @@
             string line;
             var sb = new StringBuilder();
             var logMsgs = new List<LogMessage>();
+            LogMessage logMsg = null;
 
             while ((line = fileReader.ReadLine()) != null)
             {
                 if (fileFormat == FileFormatEnums.Flat)
                 {
-                    var logMsg = new LogMessage
-                                 {
-                                     ThreadName = "NA",
-                                     Message = line,
-                                     TimeStamp = DateTime.Now,
-                                     LogLevel = LogLevel.Info
-                                 };
+                    var match = Regex.Match(line, @"\[(?<time>\d{4}\-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] \[(?<level>\w+)\] \[(?<thread>[\w\d\s]+)\] \[(?<logger>[\w\d\s]+)\] (?<msg>[\w\W\d\s]+)");
+                    if (match.Success)
+                    {
+                        if (logMsg != null)
+                        {
+                            logMsgs.Add(logMsg);
+                        }
 
-                    logMsgs.Add(logMsg);
+                        logMsg = new LogMessage
+                        {
+                            ThreadName = match.Groups["thread"].Value,
+                            Message = match.Groups["msg"].Value,
+                            LoggerName = match.Groups["logger"].Value,
+                            TimeStamp = GetDateTime(match.Groups["time"].Value),
+                            LogLevel = (LogLevel)Enum.Parse(typeof(LogLevel), CultureInfo.CurrentCulture.TextInfo.ToTitleCase(match.Groups["level"].Value.ToLower()))
+                        };
+
+                        logMsgs.Add(logMsg);
+                        logMsg = null;
+                    }
+                    else if (logMsg != null)
+                    {
+                        logMsg.Message += line;
+                    }
                 }
                 else
                 {
@@ -138,11 +167,16 @@
                     // This condition allows us to process events that spread over multiple lines
                     if (line.Contains("</log4j:event>"))
                     {
-                        LogMessage logMsg = ReceiverUtils.ParseLog4JXmlLogEvent(sb.ToString(), null);
+                        logMsg = ReceiverUtils.ParseLog4JXmlLogEvent(sb.ToString(), null);
                         logMsgs.Add(logMsg);
                         sb = new StringBuilder();
                     }
                 }
+            }
+
+            if (logMsg != null)
+            {
+                logMsgs.Add(logMsg);
             }
 
             // Notify the UI with the set of messages
